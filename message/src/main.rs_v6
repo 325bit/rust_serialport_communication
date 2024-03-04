@@ -1,0 +1,107 @@
+use std::vec::Vec;
+use std::sync::{mpsc};
+use std::thread;
+use std::time::Duration;
+
+//mod message_lib;
+use message::message_lib::{MailboxSystem,MessageHeader,print_message};
+//mod thread;
+use message::thread::{MessageTask};
+use message::thread_atp::ATPTask;
+use message::thread_uai::UAITask;
+use message::thread_el1a::EL1ATask;
+pub fn thread_send_message(mailbox_id:u32, src_id:u32, dest_id:u32, primitive:u32)
+{
+    let mut msg = MessageHeader {
+        src_id : src_id,
+        dest_id : dest_id,
+        primitive : primitive,
+        param : Vec::new(),
+    };
+    msg.param.push(primitive*2);
+    MailboxSystem::mb_send_message(mailbox_id, msg);
+}
+pub fn thread_recv_message(receiver:&mpsc::Receiver<MessageHeader>) -> u32
+{
+    match receiver.recv() {
+        Ok(msg) => {
+            print_message(&msg);
+            return msg.primitive;
+        }
+        Err(_) => {
+            println!("Receiver fail");
+            return 0;
+        }
+    }
+}
+
+fn main() {
+    let thread_atp = thread::spawn( move || {
+            println!("start Receiver");
+            let mut atp_task = MessageTask::new(ATPTask{task_done:0,},1);
+
+            atp_task.thread_receive_message();
+    });
+
+    let thread_uai = thread::spawn( move || {
+        println!("start Receiver");
+        let mut uai_task = MessageTask::new(UAITask{},2);
+
+        uai_task.thread_receive_message();
+    });
+
+    let thread_el1a = thread::spawn( move || {
+        println!("start Receiver");
+        let mut el1a_task = MessageTask::new(EL1ATask{},3);
+
+        el1a_task.thread_receive_message();
+    });
+
+    thread::sleep(Duration::from_secs(1));
+    let thread_send1 = thread::spawn( move || {
+        println!("start Sender1");
+        let mailbox_id = 1;
+        let mut primitive = 0;
+        for _ in 0..500 {
+            primitive += 1;
+            thread_send_message(mailbox_id,8,1,primitive);
+        }
+        primitive = 9999;
+        thread_send_message(mailbox_id,8,1,primitive);
+        thread::sleep(Duration::from_secs(1));
+    });
+    let thread_send2 = thread::spawn( move || {
+        println!("start Sender2");
+        let mailbox_id = 1;
+        let mut primitive = 500;
+        for _ in 0..400 {
+            primitive += 1;
+            thread_send_message(mailbox_id,12,1,primitive);
+        }
+        primitive = 8888;
+
+        thread_send_message(mailbox_id,8,1,primitive);
+        thread::sleep(Duration::from_secs(1));
+    });
+    match thread_send1.join() {
+        Ok(_) => println!("The send thread1 has finished."),
+        Err(_) => println!("An error occurred while joining the thread"),
+    }
+    match thread_send2.join() {
+        Ok(_) => println!("The send thread2 has finished."),
+        Err(_) => println!("An error occurred while joining the thread"),
+    }
+    match thread_atp.join() {
+        Ok(_) => println!("The recv thread has finished."),
+        Err(_) => println!("An error occurred while joining the thread:"),
+    }
+    match thread_uai.join() {
+        Ok(_) => println!("The recv thread has finished."),
+        Err(_) => println!("An error occurred while joining the thread:"),
+    }
+    match thread_el1a.join() {
+        Ok(_) => println!("The recv thread has finished."),
+        Err(_) => println!("An error occurred while joining the thread:"),
+    }
+
+}

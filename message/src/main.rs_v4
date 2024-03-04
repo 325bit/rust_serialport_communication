@@ -1,0 +1,68 @@
+use std::vec::Vec;
+//use std::collections::HashMap;
+//use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
+use std::time::Duration;
+//use crate::message_lib::message_system;
+mod message_lib;
+use crate::message_lib::{MailboxSystem,MessageHeader,print_message,MESSAGE_SYSTEM};
+
+
+pub fn thread_recv_message(mb_sys:&mut MailboxSystem, id:u32)
+{
+
+    {
+        match mb_sys.mb_recv_message(id) {
+            Ok(msg) => print_message(&msg),
+            Err(_) => println!("Receiver fail"),
+        }
+    }
+}
+fn main() {
+
+    MESSAGE_SYSTEM.lock().unwrap().create_mailbox_channel(1);
+
+    //let mb_sys_send = Arc::new(Mutex::new(mb_sys));
+    //let mb_sys_recv = mb_sys_send.clone();
+    // Spawn a new thread that sends messages through the sender with ID 1
+
+
+
+    let thread_send = thread::spawn( move || {
+        println!("start Sender");
+        let sender_id = 1;
+        let mut mb_send = MESSAGE_SYSTEM.lock().unwrap();
+        for i in 0..10 {
+            let mut msg = MessageHeader {
+                src_id : 8,
+                dest_id : 9,
+                primitive : 101,
+                param : Vec::new(),
+            };
+            msg.primitive += i;
+            print_message(&msg);
+            //MESSAGE_SYSTEM.lock().unwrap().mb_send_message(sender_id, msg);
+            mb_send.mb_send_message(sender_id, msg);
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+
+    let thread_recv = thread::spawn( move || {
+        println!("start Receiver");
+        let mut mb_recv = MESSAGE_SYSTEM.lock().unwrap();
+        for _ in 0..10 {
+        //let mut mb_recv = MESSAGE_SYSTEM.lock().unwrap();
+        thread_recv_message(&mut mb_recv,1);
+        }
+    });
+
+    match thread_send.join() {
+        Ok(_) => println!("The send thread has finished."),
+        Err(_) => println!("An error occurred while joining the thread"),
+    }
+    match thread_recv.join() {
+        Ok(_) => println!("The recv thread has finished."),
+        Err(_) => println!("An error occurred while joining the thread:"),
+    }
+    thread::sleep(Duration::from_secs(10));
+}

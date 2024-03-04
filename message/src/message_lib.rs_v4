@@ -1,0 +1,116 @@
+use once_cell::sync::Lazy;
+
+use std::vec::Vec;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, mpsc};
+//use std::thread;
+//use std::time::Duration;
+
+
+pub struct MessageHeader{
+    pub src_id: u32,
+    pub dest_id: u32,
+    pub primitive: u32,
+    pub param: Vec<u32>,
+}
+
+// Define a struct to hold the senders with IDs
+pub struct MailboxRegistry {
+    senders: HashMap<u32, mpsc::Sender<MessageHeader>>,
+    receivers: HashMap<u32, mpsc::Receiver<MessageHeader>>,
+}
+
+impl MailboxRegistry {
+    fn new() -> Self {
+        MailboxRegistry {
+            senders: HashMap::new(),
+            receivers: HashMap::new(),
+        }
+    }
+
+    fn add_mailbox(&mut self, id: u32, sender: mpsc::Sender<MessageHeader> ,receiver: mpsc::Receiver<MessageHeader>) {
+        self.senders.insert(id, sender);
+        self.receivers.insert(id, receiver);
+    }
+
+    fn get_mailbox_sender(&self, id: u32) -> Option<&mpsc::Sender<MessageHeader>> {
+        self.senders.get(&id)
+    }
+    fn get_mailbox_receiver(&self, id: u32) -> Option<&mpsc::Receiver<MessageHeader>> {
+        self.receivers.get(&id)
+    }
+}
+
+pub struct MailboxSystem {
+    ch_matrix : MailboxRegistry,
+}
+
+impl MailboxSystem {
+    fn new() -> Self {
+        MailboxSystem {
+            ch_matrix: MailboxRegistry::new(),
+        }
+    }
+    pub fn create_mailbox_channel(&mut self, id: u32) {
+        let (sender, receiver) = mpsc::channel();
+        {
+            self.ch_matrix.add_mailbox(id, sender,receiver);
+        }
+        println!("Created channel ID {}", id);
+    }
+    pub fn get_mailbox_channel_sender(&mut self, id: u32) -> Option<mpsc::Sender<MessageHeader>> {
+        match self.ch_matrix.get_mailbox_sender(id) {
+            Some(sender) => Some(sender.clone()),
+            None => return None,
+        }
+    }
+
+    pub fn mb_send_message(&mut self, id:u32, msg:MessageHeader)
+    {
+        if let Some(sender) = self.ch_matrix.get_mailbox_sender(id) { //self.get_mailbox_channel_sender(id) {
+            // Send the message using the retrieved sender
+            if sender.send(msg).is_err() {
+                println!("Receiver has been disconnected for sender ID {}", id);
+            }
+            println!("Sent message from sender ID {}", id);
+        } else {
+            println!("No sender found for ID {}", id);
+        }
+    }
+    pub fn mb_recv_message(&mut self,id:u32) -> Result<MessageHeader,std::io::Error>
+    {
+        match self.ch_matrix.get_mailbox_receiver(id) {
+            Some(receiver) => {
+                match receiver.recv() {
+                    Ok(message) => Ok(message),
+                    Err(_) => {
+                        let error = std::io::Error::new(std::io::ErrorKind::Other, "Receiver message fail.");
+                        Err(error)
+                    }
+                }
+            },
+            None => {
+                let error = std::io::Error::new(std::io::ErrorKind::Other, "no receive channel .");
+                Err(error)
+            }
+        }
+    }
+}
+
+pub fn print_message(msg:&MessageHeader)
+{
+    println!("messge src {}",msg.src_id);
+    println!("messge dest {}",msg.dest_id);
+    println!("messge primitive {}",msg.primitive);
+    for element in &(msg.param) {
+        println!("Element: {}", element);
+    }
+}
+
+
+
+
+
+pub static MESSAGE_SYSTEM: Lazy<Arc<Mutex<MailboxSystem>>> = Lazy::new(|| {
+    Arc::new(Mutex::new(MailboxSystem::new()))
+});

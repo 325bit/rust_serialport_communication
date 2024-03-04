@@ -1,0 +1,108 @@
+use std::vec::Vec;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
+use std::time::Duration;
+
+pub struct MessageHeader{
+    pub src_id: u32,
+    pub dest_id: u32,
+    pub primitive: u32,
+    pub param: Vec<u32>,
+}
+
+impl MessageHeader {
+    fn clone_from(&self) -> MessageHeader {
+        MessageHeader {
+            src_id: self.src_id,
+            dest_id: self.dest_id,
+            primitive: self.primitive,
+            param: self.param.clone(),
+        }
+    }
+}
+
+// Define a struct to hold the senders with IDs
+struct MailboxRegistry {
+    senders: HashMap<u32, mpsc::Sender<MessageHeader>>,
+}
+
+impl MailboxRegistry {
+    fn new() -> Self {
+        MailboxRegistry {
+            senders: HashMap::new(),
+        }
+    }
+
+    fn add_mailbox(&mut self, id: u32, sender: mpsc::Sender<MessageHeader>) {
+        self.senders.insert(id, sender);
+    }
+
+    fn get_mailbox(&self, id: u32) -> Option<&mpsc::Sender<MessageHeader>> {
+        self.senders.get(&id)
+    }
+}
+fn print_message(msg:&MessageHeader)
+{
+    println!("messge src {}\n",msg.src_id);
+    println!("messge dest {}\n",msg.dest_id);
+    println!("messge primitive {}\n",msg.primitive);
+    for element in &(msg.param) {
+        println!("Element: {}", element);
+    }
+}
+fn main() {
+    let msg = MessageHeader {
+        src_id : 8,
+        dest_id : 9,
+        primitive : 101,
+        param : Vec::new(),
+    };
+    let lock_msg = Arc::new(Mutex::new( msg));
+    let registry = Arc::new(Mutex::new(MailboxRegistry::new()));
+
+    // Create a channel and add its sender to the registry
+    let (timer_sender, timer_receiver) = mpsc::channel();
+    {
+        let mut registry_locked = registry.lock().unwrap();
+        registry_locked.add_mailbox(1, timer_sender);
+    }
+
+    print_message(&lock_msg.lock().unwrap());
+    // Spawn a new thread that sends messages through the sender with ID 1
+    thread::spawn(move || {
+        let registry = Arc::clone(&registry);
+        let sender_id = 1;
+
+        for _ in 0..1 {
+            let message = Arc::clone(&lock_msg);//42; // Replace this with your actual message generation logic
+            let message_locked = message.lock().unwrap();
+            // Get the sender from the registry by ID
+            let registry_locked = registry.lock().unwrap();
+            if let Some(sender) = registry_locked.get_mailbox(sender_id) {
+                // Send the message using the retrieved sender
+                let send_msg: MessageHeader = message_locked.clone_from();
+                if sender.send(send_msg).is_err() {
+                    println!("Receiver has been disconnected for sender ID {}", sender_id);
+                    break;
+                }
+                println!("Sent message from sender ID {}", sender_id);
+            } else {
+                println!("No sender found for ID {}", sender_id);
+                break;
+            }
+        }
+    });
+
+    // Receive messages from the receiver in the main thread
+    for _ in 0..1 {
+        match timer_receiver.recv() {
+            Ok(message) => {
+                let msg = message;
+                println!("Received: {}", msg.src_id);
+            },
+            Err(_) => println!("Receiver has been disconnected"),
+        }
+    }
+    thread::sleep(Duration::from_secs(10));
+}
