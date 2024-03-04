@@ -8,4 +8,7 @@ edition = "2021"
 [dependencies]
 lib_comm = { path = "../interface/lib_comm" }
 lib_protocol = { path = "../interface/lib_protocol" }
+libudev = "0.3.0"
+libudev-sys = "0.1.4"
 message = { path = "../message" }
+serialport = "4.3.0"
